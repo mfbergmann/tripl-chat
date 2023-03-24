@@ -8,7 +8,7 @@ text = result["text"]
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 response = openai.Completion.create(
-    model="text-davinci-003",
+    model="gpt-3.5-turbo",
     prompt=text,
     temperature=0.9,
     max_tokens=150,
