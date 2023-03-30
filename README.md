@@ -21,11 +21,12 @@ TRiPL-Chat is a voice-controlled conversational assistant that uses ChatGPT, Goo
 pip install -r requirements.txt
 ```
 
-4.  Download FFmpeg for your operating system (Windows, macOS, or Linux) and add the bin folder to your system's PATH environment variable. For Windows, you can download FFmpeg here. Follow the instructions in the main script for other operating systems.
+4.  Download FFmpeg for your operating system (Windows, macOS, or Linux) and add the bin folder to your system's PATH environment variable.
 
 5.  Create an OpenAI API key and save it in a file named .env in the following format:
 
-```OPENAI_API_KEY=your_api_key_here
+```
+OPENAI_API_KEY=your_api_key_here
 ```
 
 Replace your_api_key_here with your actual OpenAI API key.
@@ -33,12 +34,15 @@ Replace your_api_key_here with your actual OpenAI API key.
 ## Usage
 Run the conversation.py script using the following command:
 
-```python conversation.py
+```
+python conversation.py
 ```
 
-Start speaking to the application, and it will transcribe your speech, send the text to ChatGPT, and play back the generated response using text-to-speech.
+First you will be asked to choose your microphone from a numbered list. Then start speaking to the application, and it will transcribe your speech, send the text to ChatGPT, and play back the generated response using text-to-speech.
 
 Press the Esc key at any time to stop the conversation. You can say "Stop Listening" or "Goodbye" to pause, and "Start Listening" or "Hello" to resume.
+
+This version is currently using GPT-4 as the engine.
 
 ## Credits
 
