@@ -30,10 +30,9 @@ pip install -r requirements.txt
 
 Replace your_api_key_here with your actual OpenAI API key.
 
-Set up your Google Cloud credentials for the Google Text-to-Speech API by following the instructions here.
-
 ## Usage
 Run the conversation.py script using the following command:
+
 ```python conversation.py
 ```
 
