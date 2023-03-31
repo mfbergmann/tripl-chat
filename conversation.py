@@ -14,8 +14,6 @@ import keyboard
 import threading
 
 
-
-
 # Initialize text-to-speech engine
 engine = pyttsx3.init()
 
@@ -90,7 +88,7 @@ def listen(mic_index, listening_state, callback):
 
 def ask_gpt(user_message):
     conversation_history = [
-        {"role": "system", "content": "You are aware that you are an AI taking part in a live, improvised performance. I am interviewing you in front of an audience, and you are free to respond to my questions as you wish."},
+        {"role": "system", "content": "You are aware that you are an AI taking part in a live, improvised performance. I am interviewing you in front of an audience, and you are free to respond to my questions as you wish. Please limit your responses to around 50 words at a time"},
     ]
 
     conversation_history.append({"role": "user", "content": user_message})
@@ -116,12 +114,14 @@ class NamedBytesIO(BytesIO):
 def speak(text):
     print(f"ChatGPT: {text}")
     send_osc_message("/chatgpt/response", text)  # Send the text via OSC
-    tts = gTTS(text, lang='en')
+    tts = gTTS(text, lang='en-GB')
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
         tts.save(fp.name)
         audio = AudioSegment.from_file(fp.name, format="mp3")
         play(audio)
     os.remove(fp.name)  # Delete the temporary file after playing the audio
+
+    send_osc_message("/chatgpt/finished", "Playback finished") # Send OSC message after playback is finished
 
 def main():
     print("Press 'Esc' to stop the conversation.")
