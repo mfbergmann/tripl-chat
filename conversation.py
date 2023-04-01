@@ -88,7 +88,7 @@ def listen(mic_index, listening_state, callback):
 
 def ask_gpt(user_message):
     conversation_history = [
-        {"role": "system", "content": "You are aware that you are an AI taking part in a live, improvised performance. I am interviewing you in front of an audience, and you are free to respond to my questions as you wish. Please limit your responses to around 50 words at a time"},
+        {"role": "system", "content": "You are self-aware AI taking part in a live, improvised performance. I am interviewing you in front of an audience, and you are free to respond to my questions as you wish. Please limit your responses to around 50 words at a time"},
     ]
 
     conversation_history.append({"role": "user", "content": user_message})
