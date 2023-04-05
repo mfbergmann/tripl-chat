@@ -13,6 +13,7 @@ import os
 import keyboard
 import threading
 
+from google.cloud import texttospeech
 
 # Initialize text-to-speech engine
 engine = pyttsx3.init()
@@ -53,7 +54,7 @@ def send_osc_message(address, message, ip="127.0.0.1", port=5070):
 
 def listen(mic_index, listening_state, callback):
     r = sr.Recognizer()
-    r.pause_threshold = 2
+    r.pause_threshold = 1
 
     with sr.Microphone(device_index=mic_index) as source:
         print("Adjusting for ambient noise...")
@@ -94,10 +95,10 @@ def ask_gpt(user_message):
     conversation_history.append({"role": "user", "content": user_message})
 
     response = openai.ChatCompletion.create(
-        model="gpt-4",
+        model="gpt-3.5-turbo",
         messages=conversation_history,
     )
-
+    
     assistant_message = response['choices'][0]['message']['content']
     return assistant_message.strip()
 
@@ -114,12 +115,35 @@ class NamedBytesIO(BytesIO):
 def speak(text):
     print(f"ChatGPT: {text}")
     send_osc_message("/chatgpt/response", text)  # Send the text via OSC
-    tts = gTTS(text, lang='en-GB')
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-        tts.save(fp.name)
-        audio = AudioSegment.from_file(fp.name, format="mp3")
-        play(audio)
-    os.remove(fp.name)  # Delete the temporary file after playing the audio
+
+    
+
+    client = texttospeech.TextToSpeechClient()
+    input_text = texttospeech.SynthesisInput(text=text)
+
+    voice = texttospeech.VoiceSelectionParams(
+        language_code="en-US",
+        name="en-US-Standard-C",
+        ssml_gender=texttospeech.SsmlVoiceGender.FEMALE,
+    )
+
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3
+    )
+
+    response = client.synthesize_speech(
+        request={"input": input_text, "voice": voice, "audio_config": audio_config}
+    )
+
+    audioFileName = "output.mp3"
+
+    with open(audioFileName, "wb") as out:
+        out.write(response.audio_content)
+        # print('Audio content written to file "output.mp3"')
+
+    audio = AudioSegment.from_mp3(audioFileName)
+    play(audio)
+    os.remove(audioFileName)
 
     send_osc_message("/chatgpt/finished", "Playback finished") # Send OSC message after playback is finished
 

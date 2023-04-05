@@ -1,10 +1,12 @@
 gTTS==2.3.1
 keyboard==0.13.5
 openai==0.27.2
-openai_whisper==20230314
+protobuf==4.22.1
 PyAudio==0.2.13
 pydub==0.25.1
 python_osc==1.8.1
 pyttsx3==2.90
 SpeechRecognition==3.10.0
 whisper==1.1.10
+future==0.18.3
+google-cloud-texttospeech==2.14.1
