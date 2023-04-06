@@ -6,6 +6,8 @@ from pydub import AudioSegment
 from pydub.playback import play
 import pyaudio
 import tempfile
+import queue
+import sys
 from pythonosc import osc_message_builder
 from pythonosc import udp_client
 from io import BytesIO
@@ -14,6 +16,12 @@ import keyboard
 import threading
 
 from google.cloud import texttospeech
+
+import argparse
+import sounddevice as sd
+from scipy.io.wavfile import write
+import numpy as np
+import wave
 
 # Initialize text-to-speech engine
 engine = pyttsx3.init()
@@ -52,40 +60,45 @@ def send_osc_message(address, message, ip="127.0.0.1", port=5070):
     client.send_message(address, message)
 
 
-def listen(mic_index, listening_state, callback):
+# def listen(mic_index, listening_state, callback):
+def listen(recordedAudioFileName, callback):
+
     r = sr.Recognizer()
-    r.pause_threshold = 1
+    file = sr.AudioFile(recordedAudioFileName)
+    with file as source:
+        audio = r.record(source)
+    # with sr.Microphone(device_index=mic_index) as source:
+    #     print("Adjusting for ambient noise...")
+    #     r.adjust_for_ambient_noise(source, duration=1)
 
-    with sr.Microphone(device_index=mic_index) as source:
-        print("Adjusting for ambient noise...")
-        r.adjust_for_ambient_noise(source, duration=1)
+    #     if listening_state:
+    #         print("Listening...")
+    #     else:
+    #         print("Paused. Say 'start listening' to resume.")
 
-        if listening_state:
-            print("Listening...")
-        else:
-            print("Paused. Say 'start listening' to resume.")
+    #     try:
+    #         audio = r.listen(source, timeout=10)
+    #     except sr.WaitTimeoutError:
+    #         print("No speech detected within the timeout period.")
+    #         return
 
-        try:
-            audio = r.listen(source, timeout=10)
-        except sr.WaitTimeoutError:
-            print("No speech detected within the timeout period.")
-            return
+    try:
+        print("Recognizing...")
+        text = r.recognize_google(audio)
+        print(f"You said: {text}")
+        os.remove(recordedAudioFileName)
 
-        try:
-            print("Recognizing...")
-            text = r.recognize_google(audio)
-            print(f"You said: {text}")
+        # if text.lower() == "stop listening" or text.lower() == "goodbye":
+        #     listening_state = False
+        # elif text.lower() == "start listening" or text.lower() == "hello":
+        #     listening_state = True
 
-            if text.lower() == "stop listening" or text.lower() == "goodbye":
-                listening_state = False
-            elif text.lower() == "start listening" or text.lower() == "hello":
-                listening_state = True
-
-            callback(text, listening_state)
-        except sr.UnknownValueError:
-            print("Could not recognize speech.")
-        except sr.RequestError as e:
-            print(f"Recognition service error: {e}")
+        # callback(text, listening_state)
+        callback(text)
+    except sr.UnknownValueError:
+        print("Could not recognize speech.")
+    except sr.RequestError as e:
+        print(f"Recognition service error: {e}")
 
 def ask_gpt(user_message):
     conversation_history = [
@@ -153,26 +166,78 @@ def main():
 
     mic_index = select_microphone()
 
-    def process_text(text, listening_state):
-        if text.lower() == "stop listening" or text.lower() == "goodbye":
-            listening_state[0] = False
-        elif text.lower() == "start listening" or text.lower() == "hello":
-            listening_state[0] = True
+    def process_text(text):
+        # if text.lower() == "stop listening" or text.lower() == "goodbye":
+        #     listening_state[0] = False
+        # elif text.lower() == "start listening" or text.lower() == "hello":
+        #     listening_state[0] = True
 
-        if not stop_flag and listening_state[0]:
+        if not stop_flag:
             gpt_response = ask_gpt(text)
             speak(gpt_response)
 
-    listening_state = [True]
+    # listening_state = [True]
 
-    def listen_thread():
-        while not stop_flag:
-            listen(mic_index, listening_state, process_text)
+    # Sampling frequency
+    sample_rate = 44100
 
-    t = threading.Thread(target=listen_thread)
-    t.start()
+    filename = "recorded.wav"
+    # chunk size of 1024 samples
+    chunk = 1024
+    # sample format
+    FORMAT = pyaudio.paInt16
+    channels = 1
 
-    t.join()
+    buffer = []
+    recording = False
+
+    
+
+    while True:
+        p = pyaudio.PyAudio()
+        print("Press enter to begin recording")
+        keyboard.wait("enter")
+        print("Press q to stop recording")
+
+
+        stream = p.open(format=FORMAT,
+                channels=channels,
+                rate=sample_rate,
+                input=True,
+                output=True,
+                frames_per_buffer=chunk,
+                input_device_index=mic_index)
+
+        # recording = True
+
+        while True:
+            data = stream.read(chunk)
+            buffer.append(data)
+            try:
+                if keyboard.is_pressed("q"):
+                    break
+            except:
+                pass
+
+        print("Finished recording.")
+
+        stream.stop_stream()
+        stream.close()
+
+        wf = wave.open(filename, "wb")
+        wf.setnchannels(channels)
+        wf.setsampwidth(p.get_sample_size(FORMAT))
+        wf.setframerate(sample_rate)
+        wf.writeframes(b"".join(buffer))
+        wf.close()
+        p.terminate()
+
+        buffer = []
+
+        listen(filename, process_text)
+    
+
+
 
 if __name__ == "__main__":
     main()
