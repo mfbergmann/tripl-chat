@@ -38,9 +38,9 @@ Run the conversation.py script using the following command:
 python conversation.py
 ```
 
-First you will be asked to choose your microphone from a numbered list. Then start speaking to the application, and it will transcribe your speech, send the text to ChatGPT, and play back the generated response using text-to-speech.
+After launching you will select your microphone from a numbered list. Speak naturally and the application will maintain conversation context while sending your text to ChatGPT and playing back the response.
 
-Press the Esc key at any time to stop the conversation. You can say "Stop Listening" or "Goodbye" to pause, and "Start Listening" or "Hello" to resume.
+Press the Esc key at any time to quit. Say "Stop Listening" or "Goodbye" to pause, and "Start Listening" or "Hello" to resume.
 
 This version is currently using GPT-4 as the engine.
 
