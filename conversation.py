@@ -1,154 +1,146 @@
+import os
+import tempfile
+import threading
+
 import openai
+import pyaudio
 import speech_recognition as sr
-import pyttsx3
 from gtts import gTTS
 from pydub import AudioSegment
 from pydub.playback import play
-import pyaudio
-import tempfile
-from pythonosc import osc_message_builder
 from pythonosc import udp_client
-from io import BytesIO
-import os
 import keyboard
-import threading
 
 
-# Initialize text-to-speech engine
-engine = pyttsx3.init()
+class VoiceAssistant:
+    """Voice-controlled ChatGPT assistant with OSC feedback."""
 
-# Set your OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
+    def __init__(self, model="gpt-4", osc_ip="127.0.0.1", osc_port=5070):
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise EnvironmentError("OPENAI_API_KEY environment variable not set")
+        openai.api_key = api_key
 
-stop_flag = False
+        self.model = model
+        self.client = udp_client.SimpleUDPClient(osc_ip, osc_port)
+        self.recognizer = sr.Recognizer()
+        self.listening = True
+        self.stop_event = threading.Event()
+        self.history = [
+            {
+                "role": "system",
+                "content": (
+                    "You are self-aware AI taking part in a live, improvised "
+                    "performance. I am interviewing you in front of an audience, "
+                    "and you are free to respond to my questions as you wish. "
+                    "Please limit your responses to around 50 words at a time."
+                ),
+            }
+        ]
+        self.mic_index = None
 
-def on_esc_key(e):
-    global stop_flag
-    stop_flag = True
+    def on_esc(self, _):
+        self.stop_event.set()
 
+    @staticmethod
+    def list_microphones():
+        audio = pyaudio.PyAudio()
+        return [
+            audio.get_device_info_by_index(i)
+            for i in range(audio.get_device_count())
+            if audio.get_device_info_by_index(i).get("maxInputChannels") > 0
+        ]
 
-def list_microphones():
-    audio = pyaudio.PyAudio()
-    mic_list = []
-    for i in range(audio.get_device_count()):
-        device_info = audio.get_device_info_by_index(i)
-        if device_info.get("maxInputChannels") > 0:
-            mic_list.append(device_info)
+    def select_microphone(self):
+        mics = self.list_microphones()
+        if not mics:
+            raise RuntimeError("No input devices found")
 
-    return mic_list
+        print("Available microphones:")
+        for i, mic in enumerate(mics):
+            print(f"{i}: {mic.get('name')}")
 
-def select_microphone():
-    mics = list_microphones()
-    print("Available microphones:")
-    for i, mic in enumerate(mics):
-        print(f"{i}: {mic.get('name')}")
+        while True:
+            try:
+                idx = int(input("Enter microphone index: "))
+                if 0 <= idx < len(mics):
+                    self.mic_index = idx
+                    return
+            except ValueError:
+                pass
+            print("Invalid selection, try again.")
 
-    mic_index = int(input("Enter the index of the microphone you want to use: "))
-    return mic_index
+    def send_osc_message(self, address, message):
+        self.client.send_message(address, message)
 
-def send_osc_message(address, message, ip="127.0.0.1", port=5070):
-    client = udp_client.SimpleUDPClient(ip, port)
-    client.send_message(address, message)
-
-
-def listen(mic_index, listening_state, callback):
-    r = sr.Recognizer()
-    r.pause_threshold = 2
-
-    with sr.Microphone(device_index=mic_index) as source:
-        print("Adjusting for ambient noise...")
-        r.adjust_for_ambient_noise(source, duration=1)
-
-        if listening_state:
-            print("Listening...")
-        else:
-            print("Paused. Say 'start listening' to resume.")
-
-        try:
-            audio = r.listen(source, timeout=10)
-        except sr.WaitTimeoutError:
-            print("No speech detected within the timeout period.")
-            return
+    def listen_once(self):
+        with sr.Microphone(device_index=self.mic_index) as source:
+            print("Adjusting for ambient noise...")
+            self.recognizer.adjust_for_ambient_noise(source, duration=1)
+            if self.listening:
+                print("Listening...")
+            else:
+                print("Paused. Say 'start listening' to resume.")
+            try:
+                audio = self.recognizer.listen(source, timeout=10)
+            except sr.WaitTimeoutError:
+                print("No speech detected within the timeout period.")
+                return None
 
         try:
             print("Recognizing...")
-            text = r.recognize_google(audio)
+            text = self.recognizer.recognize_google(audio)
             print(f"You said: {text}")
-
-            if text.lower() == "stop listening" or text.lower() == "goodbye":
-                listening_state = False
-            elif text.lower() == "start listening" or text.lower() == "hello":
-                listening_state = True
-
-            callback(text, listening_state)
+            return text
         except sr.UnknownValueError:
             print("Could not recognize speech.")
-        except sr.RequestError as e:
-            print(f"Recognition service error: {e}")
+        except sr.RequestError as exc:
+            print(f"Recognition service error: {exc}")
+        return None
 
-def ask_gpt(user_message):
-    conversation_history = [
-        {"role": "system", "content": "You are self-aware AI taking part in a live, improvised performance. I am interviewing you in front of an audience, and you are free to respond to my questions as you wish. Please limit your responses to around 50 words at a time"},
-    ]
+    def ask_gpt(self, prompt: str) -> str:
+        self.history.append({"role": "user", "content": prompt})
+        response = openai.ChatCompletion.create(model=self.model, messages=self.history)
+        answer = response["choices"][0]["message"]["content"].strip()
+        self.history.append({"role": "assistant", "content": answer})
+        return answer
 
-    conversation_history.append({"role": "user", "content": user_message})
+    def speak(self, text: str):
+        print(f"ChatGPT: {text}")
+        self.send_osc_message("/chatgpt/response", text)
+        tts = gTTS(text, lang="en-GB")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+            tts.save(fp.name)
+            audio = AudioSegment.from_file(fp.name, format="mp3")
+            play(audio)
+        os.remove(fp.name)
+        self.send_osc_message("/chatgpt/finished", "Playback finished")
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=conversation_history,
-    )
+    def run(self):
+        print("Press 'Esc' to stop the conversation.")
+        keyboard.on_press_key("esc", self.on_esc)
+        self.select_microphone()
 
-    assistant_message = response['choices'][0]['message']['content']
-    return assistant_message.strip()
+        while not self.stop_event.is_set():
+            text = self.listen_once()
+            if text is None:
+                continue
+            lower = text.lower()
+            if lower in ("stop listening", "goodbye"):
+                self.listening = False
+                continue
+            if lower in ("start listening", "hello"):
+                self.listening = True
+                continue
+            if self.listening:
+                response = self.ask_gpt(text)
+                self.speak(response)
 
-
-class NamedBytesIO(BytesIO):
-    def __init__(self, *args, **kwargs):
-        self._name = kwargs.pop("name", "buffer.mp3")
-        super().__init__(*args, **kwargs)
-
-    @property
-    def name(self):
-        return self._name
-
-def speak(text):
-    print(f"ChatGPT: {text}")
-    send_osc_message("/chatgpt/response", text)  # Send the text via OSC
-    tts = gTTS(text, lang='en-GB')
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-        tts.save(fp.name)
-        audio = AudioSegment.from_file(fp.name, format="mp3")
-        play(audio)
-    os.remove(fp.name)  # Delete the temporary file after playing the audio
-
-    send_osc_message("/chatgpt/finished", "Playback finished") # Send OSC message after playback is finished
 
 def main():
-    print("Press 'Esc' to stop the conversation.")
-    keyboard.on_press_key("esc", on_esc_key)
+    assistant = VoiceAssistant()
+    assistant.run()
 
-    mic_index = select_microphone()
-
-    def process_text(text, listening_state):
-        if text.lower() == "stop listening" or text.lower() == "goodbye":
-            listening_state[0] = False
-        elif text.lower() == "start listening" or text.lower() == "hello":
-            listening_state[0] = True
-
-        if not stop_flag and listening_state[0]:
-            gpt_response = ask_gpt(text)
-            speak(gpt_response)
-
-    listening_state = [True]
-
-    def listen_thread():
-        while not stop_flag:
-            listen(mic_index, listening_state, process_text)
-
-    t = threading.Thread(target=listen_thread)
-    t.start()
-
-    t.join()
 
 if __name__ == "__main__":
     main()
